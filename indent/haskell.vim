@@ -22,13 +22,11 @@ endif
 
 setlocal noautoindent
 setlocal indentexpr=HIndent(v:lnum)
-setlocal indentkeys+=0=where
+setlocal indentkeys=!^F,o,O,*<Return>
 setlocal indentkeys+=0=->
 setlocal indentkeys+=0==>
-setlocal indentkeys+=0=in
-setlocal indentkeys+=0=class,0=instance,0=import
-setlocal indentkeys+=<Bar>
-setlocal indentkeys+=0\,
+setlocal indentkeys+=0=where\ ,0=in\ ,0=then\ ,0=else\ ,0\,
+setlocal indentkeys+=0=class,0=instance,0=newtype,0=import
 
 if exists("*HIndent")
   finish
@@ -50,26 +48,67 @@ function! HIndent(lnum)
   let thisl = s:GetAndStripTrailingComments(a:lnum)
   let previ = indent(plnum)
 
-  " If this is a bare where clause, indent it one step.  where as part of an
-  " instance should be unaffected unless you put it in an odd place.
-  " This is the wrong thing if you are deeply indented already and want to put
-  " a where clause on the top-level construct, but there isn't much that can
-  " be done about that case...
-  if thisl =~ '^\s*where\s*$'
-    return previ + &sw
+  " If previous line is a instance/class where clause, indent a step
+  if prevl =~ '^\(instance\|class\) .* where$'
+      return &sw
+  endif
+
+  " If this is a where clause, indent it half step from the last function
+  " definition.
+  if thisl =~ '^ *where\( .*\)\?$'
+    let R = '\v\C^ *<\S.* +\=.*$'
+    let tokPos = s:BackwardPatternSearch(a:lnum, R)
+    if tokPos != -1
+      return tokPos + &sw/2
+    endif
+  endif
+
+  " If the previous line ends in a where, indent us half step
+  if prevl =~ '^ *where *$'
+    return previ + &sw/2
   endif
 
   " If we start a new line for a type signature, see if we can line it up with
   " the previous line.
-  if thisl =~ '^\s*\(->\|=>\)\s*'
+  if thisl =~ '^ *\(->\|=>\) *'
     let tokPos = s:BackwardPatternSearch(a:lnum, '\(::\|->\|=>\)')
     if tokPos != -1
       return tokPos
     endif
   endif
 
-  if prevl =~ '\Wof\s*$' || prevl =~ '\Wdo\s*$'
+  " If previous line is a case..of expression just indent us a step
+  if prevl =~ 'case .* of *$'
     return previ + &sw
+  endif
+
+  " If previous line is a do expression (without statements in the same line)
+  " just indent us a step
+  if prevl =~ '[ =]do *$'
+    return previ + &sw
+  endif
+
+  " If previous line is a do expression (with statements in the same line)
+  " line up with the statement after do
+  let tokPos = match(prevl, '[ =]do \S.*$')
+  if tokPos != -1
+    return tokPos + 4
+  endif
+
+  " If this is a then expression, line up with the if
+  if thisl =~ '^ *then\( .*\)\?$'
+    let tokPos = s:BackwardPatternSearch(a:lnum, ' if ')
+    if tokPos != -1
+      return tokPos + 1 + &sw
+    endif
+  endif
+
+  " If this is an else expression, line up with the then
+  if thisl =~ '^ *else\( .*\)\?$'
+    let tokPos = s:BackwardPatternSearch(a:lnum, ' then\( .*\)\?$')
+    if tokPos != -1
+      return tokPos + 1
+    endif
   endif
 
   " Now for commas.  Commas will align pretty naturally for simple pattern
@@ -78,8 +117,8 @@ function! HIndent(lnum)
   " for a [ or { (the last in their line).  Also consider other commas that
   " are preceeded only by whitespace.  This isn't just a previous line check
   " necessarily, though that would cover most cases.
-  if thisl =~ '^\s*,'
-    let cmatch = match(prevl, '\(^\s*\)\@<=,')
+  if thisl =~ '^ *,'
+    let cmatch = match(prevl, '\(^ *\)\@<=,')
     if cmatch != -1
       return cmatch
     endif
@@ -90,11 +129,8 @@ function! HIndent(lnum)
     endif
   endif
 
-  " Match an 'in' keyword with the corresponding let.  Unfortunately, if the
-  " name of your next binding happens to start with 'in', this will muck with
-  " it.  Not sure if there is a workaround because we can't force an
-  " auto-indent after 'in ' as far as I can see.
-  if thisl =~ '\s*in$'
+  " Match an 'in' keyword with the corresponding let.
+  if thisl =~ ' *in\( .*\)\?$'
     let letStart = s:BackwardPatternSearch(a:lnum, '\(\W\)\@<=let\W')
     if letStart != -1
       return letStart
@@ -103,14 +139,14 @@ function! HIndent(lnum)
 
   " We don't send data or type to column zero because they can be indented
   " inside of 'class' definitions for data/type families
-  if thisl =~ '^\s*\(class\|instance\|newtype\|import\)'
+  if thisl =~ '^ *\(class\|instance\|newtype\|import\)'
     return 0
   endif
 
   " FIXME: Only do this if the previous line was not already indented for the
   " same reason.  Also be careful of -> in type signatures.  Make sure we have
   " an earlier rule to line those up properly.
-  if prevl =~ '[=>\$\.\^+\&`(-]\s*$'
+  if prevl =~ '[=>\$\.\^+\&`(-] *$'
     return previ + &sw
   endif
 
@@ -118,12 +154,7 @@ function! HIndent(lnum)
   " is the end of a kind signature in a type family/associated type, we don't
   " want to indent the next line.  We do if it is just being a * operator in
   " an expression, though.
-  if prevl =~ '\(\(type\|data\).*\)\@<!\*\s*$'
-    return previ + &sw
-  endif
-
-  " If the previous line ends in a where, indent us a step
-  if prevl =~ '\Wwhere\s*$'
+  if prevl =~ '\(\(type\|data\).*\)\@<!\* *$'
     return previ + &sw
   endif
 
@@ -135,8 +166,8 @@ function! HIndent(lnum)
   " backwards pipe search will fail for a data declaration (since data is at
   " column 0), so we can have an extra check after the pipe search for
   " data..=.
-  if thisl =~ '^\s*|$'
-    let nearestPipeIndex = s:BackwardPatternSearch(a:lnum, '\(^\s*\)\@<=|')
+  if thisl =~ '^ *|$'
+    let nearestPipeIndex = s:BackwardPatternSearch(a:lnum, '\(^ *\)\@<=|')
     if nearestPipeIndex != -1
       return nearestPipeIndex
     endif
@@ -154,7 +185,7 @@ function! HIndent(lnum)
   "
   " This should come after the 'in' aligner so that 'in' is not treated as
   " just something to be aligned to the previous binding.
-  let lbindStart = match(prevl, '\(\Wlet\s\+\)\@<=\w')
+  let lbindStart = match(prevl, '\(\Wlet \+\)\@<=\w')
   if lbindStart != -1
     return lbindStart
   endif
@@ -163,7 +194,7 @@ function! HIndent(lnum)
   " This comes after the trailing operator case - hopefully that will avoid
   " returns on lines by themselves but not really in a do block.  This is a
   " heuristic.
-  if g:hasksyn_dedent_after_return && prevl =~ '^\s*return\W'
+  if g:hasksyn_dedent_after_return && prevl =~ '^ *return\W'
     return previ - &sw
   endif
 
@@ -171,15 +202,15 @@ function! HIndent(lnum)
   " almost certainly dedent.  Again, it comes after the line continuation
   " heuristic so we don't dedent while someone is making an obviously
   " multi-line construct
-  if g:hasksyn_dedent_after_catchall_case && prevl =~ '^\s*_\s*->\W'
+  if g:hasksyn_dedent_after_catchall_case && prevl =~ '^ *_ *->\W'
     return previ - &sw
   endif
 
   " On the other hand, if the previous line is a where with some bindings
   " following it on the same line, accommodate and align with the first non-ws
   " char after the where
-  if prevl =~ '\Wwhere\s\+\w'
-    let bindStart = match(prevl, '\(\Wwhere\s\+\)\@<=\w')
+  if prevl =~ '\Wwhere \+\w'
+    let bindStart = match(prevl, '\(\Wwhere \+\)\@<=\w')
     if bindStart != -1
       return bindStart
     endif
@@ -236,7 +267,7 @@ function! s:PrevNonCommentLineNum(lnum)
     endif
 
     let aline = getline(lnum)
-    if aline =~ '^\s*--'
+    if aline =~ '^ *--'
       let lnum = lnum - 1
     else
       return lnum
