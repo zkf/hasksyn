@@ -78,8 +78,9 @@ function! HIndent(lnum)
   endif
 
   " If previous line is a case..of expression just indent us a step
-  if prevl =~ 'case .* of *$'
-    return previ + &sw
+  let tokPos = match(prevl, 'case .* of *$')
+  if tokPos != -1
+    return tokPos + &sw
   endif
 
   " If previous line is a do expression (without statements in the same line)
