@@ -25,7 +25,7 @@ setlocal indentexpr=HIndent(v:lnum)
 setlocal indentkeys=!^F,o,O,*<Return>
 setlocal indentkeys+=0=->
 setlocal indentkeys+=0==>
-setlocal indentkeys+=0=where\ ,0=in\ ,0=then\ ,0=else\ ,0\,
+setlocal indentkeys+=0=where\ ,0=in\ ,0=then\ ,0=else\ ,0=\|\ ,0\,
 setlocal indentkeys+=0=class,0=instance,0=newtype,0=import
 
 if exists("*HIndent")
@@ -159,6 +159,12 @@ function! HIndent(lnum)
     return previ + &sw
   endif
 
+  " If we have a data declaration without a '=' then indent the next line.
+  let tokPos = match(prevl, '^ *data [^=]*$')
+  if tokPos != -1
+      return tokPos + &sw
+  endif
+
   " If we see a |, first try to line it up with the pipe on the previous line.
   " Search backward on nearby lines, giving up if we hit a line with a \w at
   " column 0. Otherwise, indent it relative to the previous line
@@ -167,8 +173,9 @@ function! HIndent(lnum)
   " backwards pipe search will fail for a data declaration (since data is at
   " column 0), so we can have an extra check after the pipe search for
   " data..=.
-  if thisl =~ '^ *|$'
-    let nearestPipeIndex = s:BackwardPatternSearch(a:lnum, '\(^ *\)\@<=|')
+  if thisl =~ '^ *|'
+    let R = '\(^ *\)\@<=\(|\|=\)'
+    let nearestPipeIndex = s:BackwardPatternSearch(a:lnum, R)
     if nearestPipeIndex != -1
       return nearestPipeIndex
     endif
