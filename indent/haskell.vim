@@ -25,7 +25,7 @@ setlocal indentexpr=HIndent(v:lnum)
 setlocal indentkeys=!^F,o,O,*<Return>
 setlocal indentkeys+=0=->
 setlocal indentkeys+=0==>
-setlocal indentkeys+=0=where\ ,0=in\ ,0=then\ ,0=else\ ,0=\|\ ,0\,0==
+setlocal indentkeys+=0=where\ ,0=in\ ,0=then\ ,0=else\ ,0=\|\ ,0\,
 setlocal indentkeys+=0=class,0=instance,0=newtype,0=import
 
 if exists("*HIndent")
@@ -109,14 +109,6 @@ function! HIndent(lnum)
     let tokPos = s:BackwardPatternSearch(a:lnum, ' then\( .*\)\?$')
     if tokPos != -1
       return tokPos + 1
-    endif
-  endif
-
-  " If this line starts with '=' and the previous line is
-  " a datatype declaration
-  if thisl =~ '^ *='
-    if prevl =~ '^ *data [^=]*$'
-      return previ + &sw
     endif
   endif
 
