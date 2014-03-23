@@ -20,6 +20,10 @@ if !exists('g:hasksyn_dedent_after_catchall_case')
   let g:hasksyn_dedent_after_catchall_case = 1
 endif
 
+if !exists('g:hasksyn_natural_indent_case_and_if')
+  let g:hasksyn_natural_indent_case_and_if = 1
+endif
+
 setlocal noautoindent
 setlocal indentexpr=HIndent(v:lnum)
 setlocal indentkeys=!^F,o,O,*<Return>
@@ -47,6 +51,14 @@ function! HIndent(lnum)
   let prevl = s:GetAndStripTrailingComments(plnum)
   let thisl = s:GetAndStripTrailingComments(a:lnum)
   let previ = indent(plnum)
+
+  " Set the indentation for case and then
+  let caseindent = &sw
+  let thenindent = &sw
+  if g:hasksyn_natural_indent_case_and_if
+    let caseindent = 5
+    let thenindent = 3
+  endif
 
   " If previous line is a instance/class where clause, indent a step
   if prevl =~ '^\(instance\|class\) .* where$'
@@ -80,7 +92,7 @@ function! HIndent(lnum)
   " If previous line is a case..of expression just indent us a step
   let tokPos = match(prevl, 'case .* of *$')
   if tokPos != -1
-    return tokPos + &sw
+    return tokPos + caseindent
   endif
 
   " If previous line is a do expression (without statements in the same line)
@@ -100,7 +112,7 @@ function! HIndent(lnum)
   if thisl =~ '^ *then\( .*\)\?$'
     let tokPos = s:BackwardPatternSearch(a:lnum, ' if ')
     if tokPos != -1
-      return tokPos + 1 + &sw
+      return tokPos + 1 + thenindent
     endif
   endif
 
